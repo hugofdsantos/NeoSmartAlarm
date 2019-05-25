@@ -11,16 +11,16 @@ namespace Neo.SmartContract
     }
     public class SmartAlarm : Framework.SmartContract
     {
-        public delegate bool AnotherContract(string method, object[] args);
+        // public delegate bool AnotherContract(string method, object[] args);
+        public delegate bool AnotherContract(string name);
         private static readonly byte[] owner = "AcjwdaeMyuzxRUJd4LdqHNML627hKZpdhq".ToScriptHash();
-        private static readonly byte[] test = "7b3984fec46a1410cccc56da5d52536fd1bf2330".HexToBytes();
+        private static readonly byte[] test = "a4cfd979a4f1fcd066ac0e2d5967326560f168e0".HexToBytes();
 
         public static bool Main(string operation, object[] args, params object[] paramsToInvoke)
         {
             /*
-            integers are always multiplied by 10^3 to simulate float numbers
             args[0] => script hash of the contract to be registered reversed (scheduled)
-            args[1] => how frequent the contract should run
+            args[1] => how frequent the contract should run in seconds
              */
 
             if (Runtime.Trigger == TriggerType.Verification)
@@ -30,17 +30,17 @@ namespace Neo.SmartContract
             else if (Runtime.Trigger == TriggerType.Application)
             {
                 if (operation == "register") return Register(args, paramsToInvoke);
-                else if (operation == "execute") return Execute(args, paramsToInvoke);
+                else if (operation == "execute") return Execute(args);
             }
             Runtime.Notify("No operation found!");
 
             return false;
         }
 
-        static bool Execute(object[] args, object[] paramsToInvoke)
+        static bool Execute(object[] args)
         {
-            var contract = Blockchain.GetContract((byte[])args[0]);
-            var serializedEntry = Storage.Get(Storage.CurrentContext, contract.Script);
+            var scriptHashReversed = test;
+            var serializedEntry = Storage.Get(Storage.CurrentContext, scriptHashReversed);
             if (serializedEntry.Length == 0)
             {
                 Runtime.Notify("The given contract isnt registered");
@@ -59,8 +59,9 @@ namespace Neo.SmartContract
 
             //contract execution
             var contractParams = (object[])entry[0];
-            var contractToBeInvoked = (AnotherContract)contract.Script.ToDelegate();
-            var result = (bool)contractToBeInvoked((string)contractParams[0], (object[])contractParams[1]);
+            var contractToBeInvoked = (AnotherContract)scriptHashReversed.ToDelegate();
+            // var result = contractToBeInvoked((string)contractParams[0], (object[])contractParams[1]);
+            var result = contractToBeInvoked((string)contractParams[0]);
             if (!result)
             {
                 Runtime.Notify("Error in contract execution.");
@@ -68,7 +69,7 @@ namespace Neo.SmartContract
             }
 
             entry[2] = timeStamp;
-            Storage.Put(Storage.CurrentContext, contract.Script, entry.Serialize());
+            Storage.Put(Storage.CurrentContext, scriptHashReversed, entry.Serialize());
             return true;
         }
 
@@ -91,13 +92,12 @@ namespace Neo.SmartContract
             }
 
             var frequency = (uint)args[1];
-            if (frequency <= 2000 || frequency > 8760000)
+            if (frequency < 3600)
             {
                 Runtime.Notify("The given frequency is invalid.");
                 return false;
             }
 
-            // var contractParams = paramsToInvoke;
             newEntry[0] = paramsToInvoke;
             newEntry[1] = frequency;
             newEntry[2] = 0; //last execution
