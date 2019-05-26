@@ -11,8 +11,7 @@ namespace Neo.SmartContract
     }
     public class SmartAlarm : Framework.SmartContract
     {
-        public delegate bool AnotherContract(string method, object[] args);
-        // public delegate bool AnotherContract(string name);
+        public delegate bool AnotherContract(object[] args);
         private static readonly byte[] owner = "AcjwdaeMyuzxRUJd4LdqHNML627hKZpdhq".ToScriptHash();
 
         /*********
@@ -44,49 +43,75 @@ namespace Neo.SmartContract
         private static bool Execute(object[] args)
         {
             var scriptHash = (byte[])args[0];
-            var serializedEntry = Storage.Get(Storage.CurrentContext, scriptHash);
-            if (serializedEntry.Length == 0)
+
+            var serializedEntry = getContractFromStorageOrNull(scriptHash);
+            if (serializedEntry == null)
             {
                 Runtime.Notify("The given contract isnt registered");
+                return false;
+            }
+            else if (!isContractDeployed(scriptHash))
+            {
+                Runtime.Notify("[execute] The given contract is not deployed on network");
                 return false;
             }
 
             var entry = (object[])serializedEntry.Deserialize();
             var frequency = (uint)entry[1];
             var lastExecution = (uint)entry[2];
+
             var timeStamp = Blockchain.GetHeader(Blockchain.GetHeight()).Timestamp;
-            if (timeStamp - lastExecution <= frequency)
+            if (!isExecutionTime(timeStamp, lastExecution, frequency))
             {
                 Runtime.Notify("Its not time for contract execution.");
-                return false;
+                return false;                
             }
 
-            //contract execution
-            var contractParams = (object[])entry[0];
-            var contractToBeInvoked = (AnotherContract)scriptHash.ToDelegate();
-            var result = contractToBeInvoked((string)contractParams[0], (object[])contractParams[1]);  //errado!
-            // var result = contractToBeInvoked((string)contractParams[0]);
+            var contractArgs = (object[])entry[0];
+            var result = executeContract(scriptHash, contractArgs);
             if (!result)
             {
                 Runtime.Notify("Error in contract execution.");
                 return false;
             }
+            Runtime.Notify("Contract invoked succesfully");
 
             entry[2] = timeStamp;
             Storage.Put(Storage.CurrentContext, scriptHash, entry.Serialize());
             return true;
         }
 
+        private static bool executeContract(byte[] scriptHash, object[] args)
+        {
+            var contractInvoke = (AnotherContract)scriptHash.ToDelegate();
+            return contractInvoke(args);
+        }
+        
+        private static bool isExecutionTime(uint timeStamp, uint lastExecution, uint frequency)
+        {
+            if (timeStamp - lastExecution <= frequency)
+            {
+                return false;
+            }
+            return true;
+        }
+
         private static bool Register(object[] args)
         {
             var scriptHash = (byte[])args[0];
-            if (!isValidContract(scriptHash))
+            if (!isContractDeployed(scriptHash))
             {
+                Runtime.Notify("[register] The given contract is not deployed on network");
+                return false;
+            }
+            else if (getContractFromStorageOrNull(scriptHash) != null)
+            {
+                Runtime.Notify("Contract already registered.");
                 return false;
             }
 
             var frequency = (uint)args[1];
-            if (frequency < 3600)
+            if (!isValidFrequency(frequency))
             {
                 Runtime.Notify("The given frequency is invalid.");
                 return false;
@@ -99,17 +124,30 @@ namespace Neo.SmartContract
             return true;
         }
 
-        private static bool isValidContract(byte[] scriptHash)
+        private static bool isContractDeployed(byte[] scriptHash)
         {
             var contract = HelperExternal.GetContract(scriptHash);
             if (!contract)
             {
-                Runtime.Notify("The given scripthash is invalid.");
                 return false;
             }
-            else if ((Storage.Get(Storage.CurrentContext, scriptHash)).Length != 0)
+            return true;
+        }
+
+        private static byte[] getContractFromStorageOrNull(byte[] scriptHash)
+        {
+            var entry = Storage.Get(Storage.CurrentContext, scriptHash);
+            if (entry.Length == 0)
             {
-                Runtime.Notify("Contract already registered.");
+                return null;
+            }
+            return entry;
+        }
+
+        private static bool isValidFrequency(uint frequency)
+        {
+            if (frequency < 3600)
+            {
                 return false;
             }
             return true;
@@ -127,11 +165,7 @@ namespace Neo.SmartContract
 
         private static object[] arrangeObjectToStore(object[] paramsToInvoke, uint frequency)
         {
-            var entry = new Object[3];
-            entry[0] = paramsToInvoke;
-            entry[1] = frequency;
-            entry[2] = 0; //last execution
-            return entry;
+            return new Object[] {paramsToInvoke, frequency, 0};
         }
 
     }
