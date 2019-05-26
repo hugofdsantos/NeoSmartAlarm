@@ -11,43 +11,47 @@ namespace Neo.SmartContract
     }
     public class SmartAlarm : Framework.SmartContract
     {
-        // public delegate bool AnotherContract(string method, object[] args);
-        public delegate bool AnotherContract(string name);
+        public delegate bool AnotherContract(string method, object[] args);
+        // public delegate bool AnotherContract(string name);
         private static readonly byte[] owner = "AcjwdaeMyuzxRUJd4LdqHNML627hKZpdhq".ToScriptHash();
-        private static readonly byte[] test = "a4cfd979a4f1fcd066ac0e2d5967326560f168e0".HexToBytes();
 
-        public static bool Main(string operation, object[] args, params object[] paramsToInvoke)
+        /*********
+        args[0] => script hash reversed of the contract to be registered (scheduled)
+        args[1] => how frequent the contract should run in seconds
+        **********/
+        public static bool Main(string operation, params object[] args)
         {
-            /*
-            args[0] => script hash of the contract to be registered reversed (scheduled)
-            args[1] => how frequent the contract should run in seconds
-             */
-
             if (Runtime.Trigger == TriggerType.Verification)
             {
                 return Runtime.CheckWitness(owner);
             }
             else if (Runtime.Trigger == TriggerType.Application)
             {
-                if (operation == "register") return Register(args, paramsToInvoke);
-                else if (operation == "execute") return Execute(args);
+                if (operation == "register")
+                {
+                    return Register(args);
+                }
+                else if (operation == "execute")
+                {
+                    return Execute(args);
+                }
             }
-            Runtime.Notify("No operation found!");
 
+            Runtime.Notify("No operation found!");
             return false;
         }
 
-        static bool Execute(object[] args)
+        private static bool Execute(object[] args)
         {
-            var scriptHashReversed = test;
-            var serializedEntry = Storage.Get(Storage.CurrentContext, scriptHashReversed);
+            var scriptHash = (byte[])args[0];
+            var serializedEntry = Storage.Get(Storage.CurrentContext, scriptHash);
             if (serializedEntry.Length == 0)
             {
                 Runtime.Notify("The given contract isnt registered");
                 return false;
             }
-            var entry = (object[])serializedEntry.Deserialize();
 
+            var entry = (object[])serializedEntry.Deserialize();
             var frequency = (uint)entry[1];
             var lastExecution = (uint)entry[2];
             var timeStamp = Blockchain.GetHeader(Blockchain.GetHeight()).Timestamp;
@@ -59,9 +63,9 @@ namespace Neo.SmartContract
 
             //contract execution
             var contractParams = (object[])entry[0];
-            var contractToBeInvoked = (AnotherContract)scriptHashReversed.ToDelegate();
-            // var result = contractToBeInvoked((string)contractParams[0], (object[])contractParams[1]);
-            var result = contractToBeInvoked((string)contractParams[0]);
+            var contractToBeInvoked = (AnotherContract)scriptHash.ToDelegate();
+            var result = contractToBeInvoked((string)contractParams[0], (object[])contractParams[1]);  //errado!
+            // var result = contractToBeInvoked((string)contractParams[0]);
             if (!result)
             {
                 Runtime.Notify("Error in contract execution.");
@@ -69,25 +73,15 @@ namespace Neo.SmartContract
             }
 
             entry[2] = timeStamp;
-            Storage.Put(Storage.CurrentContext, scriptHashReversed, entry.Serialize());
+            Storage.Put(Storage.CurrentContext, scriptHash, entry.Serialize());
             return true;
         }
 
-        static bool Register(object[] args, object[] paramsToInvoke)
+        private static bool Register(object[] args)
         {
-            object[] newEntry = new object[3];
-
-            // var scriptHashReversed = (byte[])args[0];        
-            var scriptHashReversed = test;
-            var contract = HelperExternal.GetContract(scriptHashReversed);
-            if (!contract)
+            var scriptHash = (byte[])args[0];
+            if (!isValidContract(scriptHash))
             {
-                Runtime.Notify("The given scripthash is invalid.");
-                return false;
-            }
-            else if ((Storage.Get(Storage.CurrentContext, scriptHashReversed)).Length != 0)
-            {
-                Runtime.Notify("Contract already registered.");
                 return false;
             }
 
@@ -98,12 +92,47 @@ namespace Neo.SmartContract
                 return false;
             }
 
-            newEntry[0] = paramsToInvoke;
-            newEntry[1] = frequency;
-            newEntry[2] = 0; //last execution
-            Storage.Put(Storage.CurrentContext, scriptHashReversed, newEntry.Serialize());
-            
+            var paramsOfContract = parseParams(args);
+            var newEntry = arrangeObjectToStore(paramsOfContract, frequency);
+            Storage.Put(Storage.CurrentContext, scriptHash, newEntry.Serialize());
+
             return true;
         }
+
+        private static bool isValidContract(byte[] scriptHash)
+        {
+            var contract = HelperExternal.GetContract(scriptHash);
+            if (!contract)
+            {
+                Runtime.Notify("The given scripthash is invalid.");
+                return false;
+            }
+            else if ((Storage.Get(Storage.CurrentContext, scriptHash)).Length != 0)
+            {
+                Runtime.Notify("Contract already registered.");
+                return false;
+            }
+            return true;
+        }
+
+        private static object[] parseParams(object[] args)
+        {
+            var parameters = new Object[args.Length - 2];
+            for (int i = 0; i < args.Length - 2; i++)
+            {
+                parameters[i] = args[i + 2];
+            }
+            return parameters;
+        }
+
+        private static object[] arrangeObjectToStore(object[] paramsToInvoke, uint frequency)
+        {
+            var entry = new Object[3];
+            entry[0] = paramsToInvoke;
+            entry[1] = frequency;
+            entry[2] = 0; //last execution
+            return entry;
+        }
+
     }
 }
