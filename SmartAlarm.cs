@@ -118,7 +118,7 @@ namespace Neo.SmartContract
             }
 
             var paramsOfContract = parseParams(args);
-            var newEntry = arrangeObjectToStore(paramsOfContract, frequency);
+            var newEntry = new Object[] {paramsOfContract, frequency, 0};
             Storage.Put(Storage.CurrentContext, scriptHash, newEntry.Serialize());
 
             return true;
@@ -161,11 +161,6 @@ namespace Neo.SmartContract
                 parameters[i] = args[i + 2];
             }
             return parameters;
-        }
-
-        private static object[] arrangeObjectToStore(object[] paramsToInvoke, uint frequency)
-        {
-            return new Object[] {paramsToInvoke, frequency, 0};
         }
 
     }
