@@ -11,7 +11,7 @@ namespace Neo.SmartContract
     }
     public class SmartAlarm : Framework.SmartContract
     {
-        public delegate bool AnotherContract(object[] args);
+        public delegate bool AnotherContract(string op, object[] args);
         private static readonly byte[] owner = "AcjwdaeMyuzxRUJd4LdqHNML627hKZpdhq".ToScriptHash();
 
         /*********
@@ -57,8 +57,8 @@ namespace Neo.SmartContract
             }
 
             var entry = (object[])serializedEntry.Deserialize();
-            var frequency = (uint)entry[1];
-            var lastExecution = (uint)entry[2];
+            var frequency = (uint)entry[2];
+            var lastExecution = (uint)entry[3];
 
             var timeStamp = Blockchain.GetHeader(Blockchain.GetHeight()).Timestamp;
             if (!isExecutionTime(timeStamp, lastExecution, frequency))
@@ -67,8 +67,9 @@ namespace Neo.SmartContract
                 return false;                
             }
 
-            var contractArgs = (object[])entry[0];
-            var result = executeContract(scriptHash, contractArgs);
+            var contractOperation = (string)entry[0];
+            var contractParams = (object[])entry[1];
+            var result = executeContract(scriptHash, contractOperation, contractParams);
             if (!result)
             {
                 Runtime.Notify("Error in contract execution.");
@@ -76,15 +77,15 @@ namespace Neo.SmartContract
             }
             Runtime.Notify("Contract invoked succesfully");
 
-            entry[2] = timeStamp;
+            entry[3] = timeStamp;
             Storage.Put(Storage.CurrentContext, scriptHash, entry.Serialize());
             return true;
         }
 
-        private static bool executeContract(byte[] scriptHash, object[] args)
+        private static bool executeContract(byte[] scriptHash, string operation, object[] args)
         {
             var contractInvoke = (AnotherContract)scriptHash.ToDelegate();
-            return contractInvoke(args);
+            return contractInvoke(operation, args);
         }
         
         private static bool isExecutionTime(uint timeStamp, uint lastExecution, uint frequency)
@@ -117,8 +118,9 @@ namespace Neo.SmartContract
                 return false;
             }
 
-            var paramsOfContract = parseParams(args);
-            var newEntry = new Object[] {paramsOfContract, frequency, 0};
+            var contractOperation = (string)args[2];
+            var contractParams = (object[])args[3]; 
+            var newEntry = new Object[] {contractOperation, contractParams, frequency, 0};
             Storage.Put(Storage.CurrentContext, scriptHash, newEntry.Serialize());
 
             return true;
@@ -151,16 +153,6 @@ namespace Neo.SmartContract
                 return false;
             }
             return true;
-        }
-
-        private static object[] parseParams(object[] args)
-        {
-            var parameters = new Object[args.Length - 2];
-            for (int i = 0; i < args.Length - 2; i++)
-            {
-                parameters[i] = args[i + 2];
-            }
-            return parameters;
         }
 
     }
